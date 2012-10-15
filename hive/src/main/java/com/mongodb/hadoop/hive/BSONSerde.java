@@ -27,6 +27,7 @@ import org.apache.hadoop.hive.serde2.SerDeStats;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspector;
 import org.apache.hadoop.hive.serde2.objectinspector.ObjectInspectorFactory;
 import org.apache.hadoop.hive.serde2.objectinspector.StructObjectInspector;
+import org.apache.hadoop.hive.serde2.typeinfo.StructTypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfo;
 import org.apache.hadoop.hive.serde2.typeinfo.TypeInfoUtils;
 import org.apache.hadoop.io.Text;
@@ -120,21 +121,8 @@ public class BSONSerde implements SerDe {
         return rowInspect;
     }
 
-
-    public Object deserialize(Writable blob) throws SerDeException {
-        LOG.debug("Deserializing BSON Row with Class: " + blob.getClass());
-
-        BSONObject doc;
-
-        if (blob instanceof BSONWritable) {
-            BSONWritable b = (BSONWritable) blob;
-            LOG.debug("Got a BSONWritable: " + b);
-            doc = (BSONObject) b;
-        } else {
-            throw new SerDeException(getClass().toString() +
-                    " requires a BSONWritable object, not " + blob.getClass());
-        }
-
+    private static void deserializeRecursively(List<Object> row, BSONObject doc, List<String> columnNames, List<TypeInfo> columnTypes) {
+        int numColumns = columnNames.size();
         String colName = "";
         Object value;
         for (int c = 0; c < numColumns; c++) {
@@ -150,17 +138,17 @@ public class BSONSerde implements SerDe {
                         if (k.trim().equalsIgnoreCase(colName)) {
                             colName = k;
                             LOG.debug("K: " + k + "colName: " + colName);
-                        } 
+                        }
                     }
                 }
                 if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.DOUBLE_TYPE_NAME)) {
+                        Constants.DOUBLE_TYPE_NAME)) {
                     value = (Double) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.BIGINT_TYPE_NAME)) {
+                        Constants.BIGINT_TYPE_NAME)) {
                     value = (Long) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.INT_TYPE_NAME)) {
+                        Constants.INT_TYPE_NAME)) {
                     value = doc.get(colName);
                     /** Some integers end up stored as doubles
                      * due to quirks of the shell
@@ -170,16 +158,16 @@ public class BSONSerde implements SerDe {
                     else
                         value = (Integer) value;
                 } else if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.TINYINT_TYPE_NAME)) {
+                        Constants.TINYINT_TYPE_NAME)) {
                     value = (Byte) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.FLOAT_TYPE_NAME)) {
+                        Constants.FLOAT_TYPE_NAME)) {
                     value = (Float) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
                         Constants.BOOLEAN_TYPE_NAME)) {
                     value = (Boolean) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
-                                Constants.STRING_TYPE_NAME)) {
+                        Constants.STRING_TYPE_NAME)) {
                     value = (String) doc.get(colName);
                 } else if (ti.getTypeName().equalsIgnoreCase(
                         Constants.DATE_TYPE_NAME) ||
@@ -193,7 +181,7 @@ public class BSONSerde implements SerDe {
                     BasicBSONList lst = (BasicBSONList) doc.get(colName);
                     Object[] arr = new Object[lst.size()];
                     for (int i = 0; i < arr.length; i++) {
-                            arr[i] = lst.get(i);
+                        arr[i] = lst.get(i);
                     }
                     value = arr;
                 } else if (ti.getTypeName().startsWith(Constants.MAP_TYPE_NAME)) {
@@ -205,8 +193,23 @@ public class BSONSerde implements SerDe {
                     }
                     value = ((BSONObject) doc).toMap();
                 } else if (ti.getTypeName().startsWith(Constants.STRUCT_TYPE_NAME)) {
-                    //value = ((BSONObject) doc).toMap();
-                    throw new IllegalArgumentException("Unable to currently work with structs.");
+                    BSONObject childDoc = (BSONObject) doc.get(colName);
+                    if (childDoc != null) {
+                        StructTypeInfo sti = (StructTypeInfo) ti;
+                        ArrayList<String> fieldNames = sti.getAllStructFieldNames();
+                        ArrayList<TypeInfo> fieldTypeInfos = sti.getAllStructFieldTypeInfos();
+
+                        int numFields = fieldNames.size();
+                        ArrayList<Object> objects = new ArrayList<Object>(numFields);
+                        for (int i=0; i<numFields; i++) {
+                            objects.add(null);
+                        }
+
+                        deserializeRecursively(objects, childDoc, fieldNames, fieldTypeInfos);
+                        value = objects;
+                    } else {
+                        value = null;
+                    }
                 } else {
                     // Fall back, just get an object
                     LOG.warn("FALLBACK ON '" + colName + "'");
@@ -217,6 +220,24 @@ public class BSONSerde implements SerDe {
                 LOG.error("Exception decoding row at column " + colName, e);
             }
         }
+    }
+
+
+    public Object deserialize(Writable blob) throws SerDeException {
+        LOG.debug("Deserializing BSON Row with Class: " + blob.getClass());
+
+        BSONObject doc;
+
+        if (blob instanceof BSONWritable) {
+            BSONWritable b = (BSONWritable) blob;
+            LOG.debug("Got a BSONWritable: " + b);
+            doc = (BSONObject) b;
+        } else {
+            throw new SerDeException(getClass().toString() +
+                    " requires a BSONWritable object, not " + blob.getClass());
+        }
+
+        deserializeRecursively(row, doc, columnNames, columnTypes);
 
         LOG.debug("Deserialized Row: " + row);
 
