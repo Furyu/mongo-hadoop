@@ -121,7 +121,67 @@ public class BSONSerde implements SerDe {
         return rowInspect;
     }
 
-    private static void deserializeRecursively(List<Object> row, BSONObject doc, List<String> columnNames, List<TypeInfo> columnTypes) {
+    public Object deserialize(Writable blob) throws SerDeException {
+        LOG.debug("Deserializing BSON Row with Class: " + blob.getClass());
+
+        BSONObject doc;
+
+        if (blob instanceof BSONWritable) {
+            BSONWritable b = (BSONWritable) blob;
+            LOG.debug("Got a BSONWritable: " + b);
+            doc = (BSONObject) b;
+        } else {
+            throw new SerDeException(getClass().toString() +
+                    " requires a BSONWritable object, not " + blob.getClass());
+        }
+
+        deserializeRecursively(row, doc, columnNames, columnTypes);
+
+        LOG.debug("Deserialized Row: " + row);
+
+        return row;
+    }
+
+    /**
+     * Not sure - something to do with serialization of data
+     */
+    public Class<? extends Writable> getSerializedClass() {
+        return Text.class;
+    }
+
+    public Writable serialize(Object obj, ObjectInspector objInspector)
+                                throws SerDeException {
+        LOG.info("-----------------------------");
+        LOG.info("***** serialize BSON ********");
+        LOG.info("-----------------------------");
+
+        return null;
+    }
+
+    public SerDeStats getSerDeStats() {
+        stats.setRawDataSize(serializedSize);
+        return stats;
+    }
+
+
+
+    private static final byte[] HEX_CHAR = new byte[] {
+            '0' , '1' , '2' , '3' , '4' , '5' , '6' , '7' , '8' ,
+            '9' , 'A' , 'B' , 'C' , 'D' , 'E' , 'F'
+    };
+
+    protected static void dumpBytes( byte[] buffer ){
+        StringBuilder sb = new StringBuilder( 2 + ( 3 * buffer.length ) );
+
+        for ( byte b : buffer ){
+            sb.append( "0x" ).append( (char) ( HEX_CHAR[( b & 0x00F0 ) >> 4] ) ).append(
+                    (char) ( HEX_CHAR[b & 0x000F] ) ).append( " " );
+        }
+
+        LOG.info( "Byte Dump: " + sb.toString() );
+    }
+
+    protected static void deserializeRecursively(List<Object> row, BSONObject doc, List<String> columnNames, List<TypeInfo> columnTypes) {
         int numColumns = columnNames.size();
         String colName = "";
         Object value;
@@ -220,66 +280,5 @@ public class BSONSerde implements SerDe {
                 LOG.error("Exception decoding row at column " + colName, e);
             }
         }
-    }
-
-
-    public Object deserialize(Writable blob) throws SerDeException {
-        LOG.debug("Deserializing BSON Row with Class: " + blob.getClass());
-
-        BSONObject doc;
-
-        if (blob instanceof BSONWritable) {
-            BSONWritable b = (BSONWritable) blob;
-            LOG.debug("Got a BSONWritable: " + b);
-            doc = (BSONObject) b;
-        } else {
-            throw new SerDeException(getClass().toString() +
-                    " requires a BSONWritable object, not " + blob.getClass());
-        }
-
-        deserializeRecursively(row, doc, columnNames, columnTypes);
-
-        LOG.debug("Deserialized Row: " + row);
-
-        return row;
-    }
-
-    /**
-     * Not sure - something to do with serialization of data
-     */
-    public Class<? extends Writable> getSerializedClass() {
-        return Text.class;
-    }
-
-    public Writable serialize(Object obj, ObjectInspector objInspector)
-                                throws SerDeException {
-        LOG.info("-----------------------------");
-        LOG.info("***** serialize BSON ********");
-        LOG.info("-----------------------------");
-
-        return null;
-    }
-
-    public SerDeStats getSerDeStats() {
-        stats.setRawDataSize(serializedSize);
-        return stats;
-    }
-
-
-
-    private static final byte[] HEX_CHAR = new byte[] {
-            '0' , '1' , '2' , '3' , '4' , '5' , '6' , '7' , '8' ,
-            '9' , 'A' , 'B' , 'C' , 'D' , 'E' , 'F'
-    };
-
-    protected static void dumpBytes( byte[] buffer ){
-        StringBuilder sb = new StringBuilder( 2 + ( 3 * buffer.length ) );
-
-        for ( byte b : buffer ){
-            sb.append( "0x" ).append( (char) ( HEX_CHAR[( b & 0x00F0 ) >> 4] ) ).append(
-                    (char) ( HEX_CHAR[b & 0x000F] ) ).append( " " );
-        }
-
-        LOG.info( "Byte Dump: " + sb.toString() );
     }
 }
